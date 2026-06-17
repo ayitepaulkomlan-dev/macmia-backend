@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ChromaDB Explorer — MACMIA</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}
+h1{font-size:18px;color:#60a5fa;margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:14px;text-align:center}
+.stat-n{font-size:22px;font-weight:600;color:#60a5fa}
+.stat-l{font-size:11px;color:#94a3b8;margin-top:4px}
+.controls{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+input,select{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px}
+input{flex:1;min-width:200px}
+button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}
+button:hover{background:#1d4ed8}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#1e293b;color:#94a3b8;padding:8px 10px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #1e293b;vertical-align:top;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr:hover td{background:#1e293b}
+.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px}
+.badge-cpf{background:#065f46;color:#6ee7b7}
+.badge-rncp{background:#1e3a5f;color:#60a5fa}
+.badge-nan{background:#1f2937;color:#6b7280}
+.pagination{display:flex;gap:8px;margin-top:16px;align-items:center}
+.page-info{color:#94a3b8;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🗄️ ChromaDB Explorer — MACMIA Formations</h1>
+
+<div class="stats" id="stats">
+  <div class="stat" style="border-color:#2563eb"><div class="stat-n" id="filtered" style="color:#60a5fa">...</div><div class="stat-l">Résultats filtrés</div></div>
+  <div class="stat"><div class="stat-n" id="total">...</div><div class="stat-l">Total formations</div></div>
+  <div class="stat"><div class="stat-n" id="avec-rncp">...</div><div class="stat-l">Avec RNCP</div></div>
+  <div class="stat"><div class="stat-n" id="avec-prix">...</div><div class="stat-l">Avec prix</div></div>
+  <div class="stat"><div class="stat-n" id="avec-ville">...</div><div class="stat-l">Avec ville</div></div>
+</div>
+
+<div class="controls">
+  <input type="text" id="search" placeholder="Rechercher par titre, organisme, RNCP..." oninput="filterData()">
+  <select id="filter-region" onchange="filterData()">
+    <option value="">Toutes régions</option>
+  </select>
+  <select id="filter-rncp" onchange="filterData()">
+    <option value="">Tous RNCP</option>
+    <option value="yes">Avec RNCP</option>
+    <option value="no">Sans RNCP</option>
+  </select>
+  <button onclick="loadData()">🔄 Actualiser</button>
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Titre formation</th>
+      <th>Organisme</th>
+      <th>RNCP</th>
+      <th>Durée (h)</th>
+      <th>Prix (€)</th>
+      <th>Région</th>
+      <th>Département</th>
+      <th>Modalité</th>
+      <th>Niveau</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+</div>
+
+<div class="pagination">
+  <button onclick="prevPage()">← Précédent</button>
+  <span class="page-info" id="page-info">Page 1</span>
+  <button onclick="nextPage()">Suivant →</button>
+  <span class="page-info" id="showing">Affichage: 0-0 / 0</span>
+</div>
+
+<script>
+let allData = [];
+let filtered = [];
+let page = 0;
+const perPage = 50;
+
+let isLoading = false;
+
+async function loadData() {
+  if (isLoading) return;
+  isLoading = true;
+  document.getElementById('tbody').innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8">Chargement...</td></tr>';
+  
+  const colId = 'b83ec9a1-a3bf-4af9-8c0a-4b3e4136d3b2';
+  let offset = 0;
+  allData = [];
+  
+  while(true) {
+    const r = await fetch(`/chroma/collections/${colId}/get`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({limit: 1000, offset: offset, include: ['metadatas']})
+    });
+    const d = await r.json();
+    if (!d.ids || d.ids.length === 0) break;
+    d.ids.forEach((id, i) => {
+      allData.push({id, ...d.metadatas[i]});
+    });
+    offset += d.ids.length;
+    document.getElementById('total').textContent = allData.length + '...';
+    if (d.ids.length < 1000) break;
+  }
+  
+  // Stats
+  document.getElementById('total').textContent = allData.length.toLocaleString();
+  document.getElementById('filtered').textContent = allData.length.toLocaleString();
+  document.getElementById('avec-rncp').textContent = allData.filter(d => d.rncp && d.rncp !== '-1' && d.rncp !== 'nan').length.toLocaleString();
+  document.getElementById('avec-prix').textContent = allData.filter(d => d.prix && parseFloat(d.prix) > 0).length.toLocaleString();
+  document.getElementById('avec-ville').textContent = allData.filter(d => d.departement && d.departement !== 'nan').length.toLocaleString();
+  
+  // Régions
+  const regions = [...new Set(allData.map(d => d.region).filter(r => r && r !== 'nan'))].sort();
+  const sel = document.getElementById('filter-region');
+  regions.forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; sel.appendChild(o); });
+  
+  isLoading = false;
+  filterData();
+}
+
+function filterData() {
+  const qRaw = document.getElementById('search').value.toLowerCase().trim();
+  const keywords = qRaw.split(/\s+/).filter(Boolean);
+  const region = document.getElementById('filter-region').value;
+  const rncp = document.getElementById('filter-rncp').value;
+
+  filtered = allData.filter(d => {
+    const txt = (
+      (d.titre_formation||'') + ' ' +
+      (d.titre_certification||'') + ' ' +
+      (d.organisme||'') + ' ' +
+      (d.rncp||'') + ' ' +
+      (d.niveau||'') + ' ' +
+      (d.region||'') + ' ' +
+      (d.departement||'')
+    ).toLowerCase();
+    if (keywords.length && !keywords.every(kw => txt.includes(kw))) return false;
+    if (region && d.region !== region) return false;
+    if (rncp === 'yes' && (!d.rncp || d.rncp === '-1' || d.rncp === 'nan')) return false;
+    if (rncp === 'no' && d.rncp && d.rncp !== '-1' && d.rncp !== 'nan') return false;
+    return true;
+  });
+  page = 0;
+  document.getElementById('filtered').textContent = filtered.length.toLocaleString();
+  renderTable();
+}
+
+function renderTable() {
+  const start = page * perPage;
+  const end = Math.min(start + perPage, filtered.length);
+  const rows = filtered.slice(start, end);
+  
+  document.getElementById('page-info').textContent = `Page ${page + 1} / ${Math.ceil(filtered.length / perPage)}`;
+  document.getElementById('showing').textContent = `Affichage: ${start+1}-${end} / ${filtered.length.toLocaleString()}`;
+  
+  document.getElementById('tbody').innerHTML = rows.map((d, i) => `
+    <tr title="${d.titre_formation||''}">
+      <td style="color:#94a3b8">${start+i+1}</td>
+      <td style="max-width:250px" title="${d.titre_formation||''}">${(d.titre_formation||'—').substring(0,50)}${(d.titre_formation||'').length>50?'...':''}</td>
+      <td>${(d.organisme||'—').substring(0,25)}</td>
+      <td>${d.rncp && d.rncp !== '-1' && d.rncp !== 'nan' ? `<span class="badge badge-rncp">${d.rncp}</span>` : '<span class="badge badge-nan">—</span>'}</td>
+      <td>${d.duree_heures && parseFloat(d.duree_heures) > 0 ? parseFloat(d.duree_heures).toFixed(0) : '—'}</td>
+      <td>${d.prix && parseFloat(d.prix) > 0 ? parseInt(d.prix).toLocaleString() + ' €' : '—'}</td>
+      <td>${d.region && d.region !== 'nan' ? d.region.substring(0,20) : '—'}</td>
+      <td>${d.departement && d.departement !== 'nan' ? d.departement : '—'}</td>
+      <td>${parseInt(d.nb_distanciel||0) > 0 ? '💻 Distanciel' : '📍 Présentiel'}</td>
+      <td style="max-width:120px;font-size:10px">${d.niveau && d.niveau !== 'nan' ? d.niveau.substring(0,30) : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function prevPage() { if (page > 0) { page--; renderTable(); } }
+function nextPage() { if ((page+1)*perPage < filtered.length) { page++; renderTable(); } }
+
+// Proxy ChromaDB via FastAPI
+loadData();
+</script>
+</body>
+</html>
