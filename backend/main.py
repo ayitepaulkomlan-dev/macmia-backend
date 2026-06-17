@@ -49,6 +49,27 @@ from fastapi.responses import FileResponse
 async def download_backend():
     return FileResponse("/tmp/macmia_backend.zip", filename="macmia_backend.zip")
 
+
+import httpx
+from fastapi import Request
+from fastapi.responses import HTMLResponse, Response
+
+@app.get("/chroma-explorer", response_class=HTMLResponse)
+async def chroma_explorer():
+    return open("/home/docker/macmia/backend/chroma_explorer.html").read()
+
+@app.api_route("/chroma/{path:path}", methods=["GET","POST","PUT","DELETE"])
+async def chroma_proxy(path: str, request: Request):
+    body = await request.body()
+    async with httpx.AsyncClient() as client:
+        r = await client.request(
+            method=request.method,
+            url=f"http://localhost:8001/api/v1/{path}",
+            content=body,
+            headers={"Content-Type": "application/json"}
+        )
+    return Response(content=r.content, media_type="application/json")
+
 if __name__ == "__main__":
     from config import settings
     uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=False)
