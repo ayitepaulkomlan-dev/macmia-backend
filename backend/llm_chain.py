@@ -107,8 +107,41 @@ async def call_main_llm(messages_or_history, messages: list = None, max_tokens: 
         # Appelé avec (system, messages)
         return generate(messages_or_history, messages, max_tokens)
 
-async def call_extraction_llm(system: str, messages: list, max_tokens: int = None) -> str:
-    return generate(system, messages, max_tokens or 500)
+async def call_extraction_llm(cv_text: str, max_tokens: int = None) -> dict:
+    """Extrait les données structurées d un CV via le LLM."""
+    system = (
+        "Tu es un extracteur de CV expert. Analyse ce CV et retourne UNIQUEMENT ce JSON valide, sans texte avant ou apres :\n"
+        "{\n"
+        '  "nom": "Prenom Nom",\n'
+        '  "email": "",\n'
+        '  "telephone": "",\n'
+        '  "poste_actuel": "titre du poste actuel",\n'
+        '  "niveau_etudes": "Bac+5",\n'
+        '  "annees_experience": 5,\n'
+        '  "competences_cles": ["Python", "SQL"],\n'
+        '  "diplomes": ["Master Data Science"],\n'
+        '  "experiences_professionnelles": ["2021-2024: Chef de projet Data"],\n'
+        '  "langues": ["Francais", "Anglais"],\n'
+        '  "localisation": "Paris, France",\n'
+        '  "resume_profil": "Ingenieur..."\n'
+        "}"
+    )
+    messages = [{"role": "user", "content": f"Voici le CV a analyser :\n\n{cv_text[:3000]}"}]
+    raw = generate(system, messages, max_tokens or 800)
+    try:
+        import re as _re
+        # Nettoyer markdown
+        clean = raw.strip()
+        clean = _re.sub(r"```json\s*", "", clean)
+        clean = _re.sub(r"```\s*", "", clean)
+        clean = clean.strip()
+        import json as _json
+        return _json.loads(clean)
+    except Exception:
+        return {"raw": raw, "nom": "?", "poste_actuel": "?", "niveau_etudes": "?",
+                "annees_experience": 0, "competences_cles": [], "diplomes": [],
+                "experiences_professionnelles": [], "langues": [], "localisation": "?",
+                "resume_profil": "?"}
 
 # Pour compatibilité LangChain
 class FakeLLM:
